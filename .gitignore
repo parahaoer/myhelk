@@ -1,0 +1,15 @@
+helk-logstash/.DS_Store
+.DS_Store
+.git
+.vscode/
+.idea/
+.testing/
+.bak
+.BAK
+.dpkg-dist
+.swp
+.tmp
+.test
+# HELK Custom Configurations
+*custom*
+/docker/docker-compose.yml
