@@ -30,6 +30,7 @@ export DOCKER_CLIENT_TIMEOUT=300
 export COMPOSE_HTTP_TIMEOUT=300
 
 # *********** Check if user is root ***************
+# 当 $EUID 不等于0， 则 提示需要使用root用户来运行该脚本
 if [[ $EUID -ne 0 ]]; then
   echo "$HELK_INFO_TAG YOU MUST BE ROOT TO RUN THIS SCRIPT!"
   exit 1
@@ -37,6 +38,8 @@ fi
 
 # *********** Set Log File ***************
 LOGFILE="/var/log/helk-install.log"
+
+# $@ 代表 获取所有的参数
 echoerror() {
     printf "${RC} * ERROR${EC}: $@\n" 1>&2;
 }
@@ -44,6 +47,7 @@ echoerror() {
 # ********* Globals **********************
 SYSTEM_KERNEL="$(uname -s)"
 # Will output in MBs
+#搜索/proc/meminfo有MemAvailable关键字的所有行，并显示第2个变量除以1024的结果
 AVAILABLE_MEMORY=$(awk '/MemAvailable/{printf "%.f", $2/1024}' /proc/meminfo)
 TOTAL_MEMORY=$(awk '/MemTotal/{printf "%.f", $2/1024}' /proc/meminfo)
 # HELK Directory
@@ -139,9 +143,12 @@ check_min_requirements() {
 check_system_info() {
   if [ "$SYSTEM_KERNEL" == "Linux" ]; then
     # *********** Check distribution list ***************
+    # . / 是将/etc/os-release文件加载，然后打印其中的变量$ID
     LSB_DIST="$(. /etc/os-release && echo "$ID")"
     LSB_DIST="$(echo "$LSB_DIST" | tr '[:upper:]' '[:lower:]')"
     # *********** Check distribution version ***************
+
+    # 当是ubuntu系统时
     case "$LSB_DIST" in
     ubuntu)
       if [ -x "$(command -v lsb_release)" ]; then
@@ -163,6 +170,8 @@ check_system_info() {
       # ********* Commenting Out CDROM **********************
       sed -i "s/\(^deb cdrom.*$\)/\#/g" /etc/apt/sources.list
       ;;
+
+      #$LSB_DIST 为centos时，如果 $DIST_VERSION 为空 并且 /etc/os-release 可读时， DIST_VERSION 被赋值为 7
     centos)
       if [ -z "$DIST_VERSION" ] && [ -r /etc/os-release ]; then
         DIST_VERSION="$(. /etc/os-release && echo "$VERSION_ID")"
@@ -181,6 +190,8 @@ check_system_info() {
       fi
       ;;
     esac
+
+    # $? 是上一条命令执行的返回值
     ERROR=$?
     if [ $ERROR -ne 0 ]; then
       echoerror "Could not verify distribution or version of the OS (Error Code: $ERROR)."
@@ -257,6 +268,8 @@ install_docker() {
   ERROR=$?
   if [ $ERROR -ne 0 ]; then
     echoerror "Could not install docker via convenience script (Error Code: $ERROR)."
+
+    #判断系统是否可以执行snap命令 ，返回0表示能够执行，返回不是0表示不能执行
     if [ -x "$(command -v snap)" ]; then
       SNAP_VERSION=$(snap version | grep -w 'snap' | awk '{print $2}')
       echo "$HELK_INFO_TAG Snap v$SNAP_VERSION is available. Trying to install docker via snap.."
@@ -327,6 +340,10 @@ set_kibana_ui_password() {
     echo -e "\n$HELK_INFO_TAG Please make sure to create a custom Kibana password and store it securely for future use."
     sleep 1
     while true; do
+
+      # read命令接收标准输入（键盘）的输入，-p参数用于向用户显示一定的提示信息，
+      #-t选项指定read命令等待输入的秒数。当计时满时，read命令返回一个非零退出状态;    
+      #
       read -t 90 -p "$HELK_INFO_TAG Set HELK Kibana UI Password: " -e -i "hunting" KIBANA_UI_PASSWORD_INPUT
       READ_INPUT=$?
       KIBANA_UI_PASSWORD_INPUT=${KIBANA_UI_PASSWORD_INPUT:-"hunting"}
@@ -372,6 +389,10 @@ set_network() {
     # *********** Getting Host IP ***************
     # https://github.com/Invoke-IR/ACE/blob/master/ACE-Docker/start.sh
     #echo "$HELK_INFO_TAG Obtaining current host IP.."
+    # 正则表达式 \b 匹配一个单词边界，也就是指单词和空格间的位置。
+    # {1,3} 最少匹配1次且最多匹配3次  \. 表示字符.
+    # {3} 表示精确匹配3次
+    # tail -1 表示取最后一行
     case "${SYSTEM_KERNEL}" in
     Linux*) HOST_IP=$(ip route get 1 | grep -oE "\b([0-9]{1,3}\.){3}[0-9]{1,3}\b" | tail -1) ;;
     Darwin*) HOST_IP=$(ifconfig en0 | grep inet | grep -v inet6 | cut -d ' ' -f2) ;;
@@ -413,6 +434,7 @@ set_helk_subscription() {
       local subscription_input
       read -t 30 -p "$HELK_INFO_TAG Set HELK elastic subscription (basic or trial): " -e -i "basic" subscription_input
       READ_INPUT=$?
+      # 假如 $SUBSCRIPTION_CHOICE 没有设定或为空值，则使用 "basic" 作传回值。 
       SUBSCRIPTION_CHOICE=${subscription_input:-"basic"}
       if [ $READ_INPUT = 142 ]; then
         break
@@ -470,6 +492,9 @@ set_helk_build() {
           fi
           ;;
         4)
+          # 使用[[ ... ]]条件判断结构，而不是[ ... ]，能够防止脚本中的许多逻辑错误。
+          # 比如，&&、||、<和> 操作符能够正常存在于[[ ]]条件判断结构中，但是如果出现在[ ]结构中的话，会报错。
+          # 比如可以直接使用if [[ $a != 1 && $a != 2 ]], 如果不使用双括号, 则为if [ $a -ne 1] && [ $a != 2 ]或者if [ $a -ne 1 -a $a != 2 ]。
           if [[ $AVAILABLE_MEMORY -le $INSTALL_MINIMUM_MEMORY_NOTEBOOK ]]; then
             echo "$HELK_INFO_TAG Your available memory for HELK build option ${HELK_BUILD} is not enough."
             echo "$HELK_INFO_TAG Minimum required for this build option is $INSTALL_MINIMUM_MEMORY_NOTEBOOK MBs."
