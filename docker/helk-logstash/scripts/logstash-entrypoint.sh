@@ -65,6 +65,7 @@ fi
 # *********** Check if Elasticsearch is up ***************
 while true
   do
+    # curl -s参数表示静默模式，不输出任何结果， -o参数将输出写入指定文件， -w 指定命令完成后输出什么
     ES_STATUS_CODE=$(curl -s -o /dev/null -w "%{http_code}" $ELASTICSEARCH_ACCESS)
     if [ "$ES_STATUS_CODE" -eq 200 ]; then
       echo "$HELK_LOGSTASH_INFO_TAG Connected successfully to elasticsearch URI.."
@@ -80,6 +81,7 @@ echo "$HELK_LOGSTASH_INFO_TAG Uploading templates for field & value mappings and
 for file in "${DIR}"/*.json; do
     template_name=$(echo "$file" | sed -r ' s/^.*\/[0-9]+\-//' | sed -r ' s/\.json$//')
     echo "$HELK_LOGSTASH_INFO_TAG Uploading $template_name template to elasticsearch.."
+    # curl -X 指定请求命令，-H 自定义报文头发送到服务器
     until [[ "$(curl -s -o /dev/null -w '%{http_code}' -X POST $ELASTICSEARCH_ACCESS/_template/"$template_name" -d@"${file}" -H 'Content-Type: application/json')" == "200" ]]; do
       echo "$HELK_LOGSTASH_INFO_TAG Retrying uploading $template_name"
       sleep 2
